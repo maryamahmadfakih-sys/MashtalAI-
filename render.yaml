@@ -1,0 +1,15 @@
+# Render Blueprint: deploys the MASHTAL AI server (ai-backend/) as a free web service.
+services:
+  - type: web
+    name: mashtal-ai
+    runtime: python
+    plan: free
+    rootDir: ai-backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false        # you type the key in Render's dashboard; it is never stored in GitHub
+      - key: PYTHON_VERSION
+        value: 3.12.8
