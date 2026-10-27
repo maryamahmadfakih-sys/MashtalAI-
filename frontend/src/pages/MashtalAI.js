@@ -36,6 +36,7 @@ function MashtalAI() {
   // 📹 Camera and System Core States
   const [cameraActive, setCameraActive] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [analyzingMsg, setAnalyzingMsg] = useState("Executing Sovereign AI Analysis...");
 
   // 💾 PERSISTENCE CORRECTION: Initialize state from local cache so data stays after navigation
   const [capturedImage, setCapturedImage] = useState(() => {
@@ -213,10 +214,28 @@ function MashtalAI() {
     return { temperature: 28.5, humidity: 60.0, soil_moisture: 35.0, source: "⚠️ default values (no weather data)" };
   };
 
+  // ⏰ The free Render server sleeps after 15 min. Ping it and wait (up to ~2 min) until it is awake.
+  const wakeServer = async () => {
+    const started = Date.now();
+    while (Date.now() - started < 120000) {
+      try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 15000);
+        const r = await fetch(`${API_URL}/`, { signal: ctrl.signal });
+        clearTimeout(t);
+        if (r.ok) return true;
+      } catch (e) { /* still waking up */ }
+      setAnalyzingMsg(`Waking up AI server... ${Math.round((Date.now() - started) / 1000)}s (first scan can take ~1 min)`);
+      await new Promise((res) => setTimeout(res, 4000));
+    }
+    return false;
+  };
+
   // 🤖 AI Diagnosis Engine - Linked to your Sovereign Python Server
   const executeAiDiagnosis = async (base64Image) => {
     if (!base64Image) return;
     setAnalyzing(true);
+    setAnalyzingMsg("Connecting to AI server...");
     setAiReport(null);
 
     const cleanBase64 = base64Image.replace(/^data:image\/[a-z]+;base64,/, "");
@@ -231,7 +250,11 @@ function MashtalAI() {
       } catch (e) { /* keep default */ }
       const sensorInfo = `${live.soil_moisture}% soil moisture · ${live.temperature}°C · ${live.humidity}% humidity — ${live.source}`;
 
-      const response = await fetch(`${API_URL}/predict_irrigation`, {
+      const awake = await wakeServer();
+      if (!awake) throw new Error(`AI server did not respond at ${API_URL}`);
+      setAnalyzingMsg("Executing Sovereign AI Analysis...");
+
+      const postScan = () => fetch(`${API_URL}/predict_irrigation`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -246,6 +269,13 @@ function MashtalAI() {
           image_data: cleanBase64 
         })
       });
+
+      let response = await postScan();
+      if ([502, 503, 504].includes(response.status)) {
+        // Server was still starting up - try once more
+        await new Promise((res) => setTimeout(res, 5000));
+        response = await postScan();
+      }
 
       if (!response.ok) {
         throw new Error(`Sovereign AI Server returned error code: ${response.status}`);
@@ -317,24 +347,18 @@ function MashtalAI() {
       localStorage.setItem("mashtal_history", JSON.stringify([logEntry, ...currentHistory]));
 
     } catch (error) {
-      console.error("AI Server Integration Offline. Executing safe localized simulation...", error);
-      
-      // 🛡️ Fallback Simulation Block if server can't be reached
-      setTimeout(() => {
-        const simulatedReport = {
-          plantType: "Rose Specimen (Simulated)",
-          disease: "Healthy Foliage Context",
-          severity: "Optimal",
-          healthScore: "94.20%",
-          status: "Python Server Offline Connection Timeout",
-          recommendation: "✅ [Local Simulation Mode]: Infrastructure defaults active. Valve telemetry closed.",
-          treatmentPlan: "Maintain standardized watering routines. Ensure clean sub-drainage parameters.",
-          pumpDuration: 0
-        };
-        
-        setAiReport(simulatedReport);
-        localStorage.setItem("mashtal_cached_report", JSON.stringify(simulatedReport));
-      }, 1200);
+      console.error("AI server request failed:", API_URL, error);
+      // Show the real problem instead of fake data (not cached, so a retry starts clean)
+      setAiReport({
+        plantType: "Not analysed",
+        disease: "AI server unreachable",
+        severity: "Error",
+        healthScore: "—",
+        status: String(error.message || error),
+        recommendation: `⚠️ Could not reach the AI server at ${API_URL}. ${error.message || error}. Please try again in a minute.`,
+        treatmentPlan: "No diagnosis yet. Tap Upload Photo to try again.",
+        pumpDuration: 0
+      });
     } finally {
       setAnalyzing(false);
     }
@@ -425,7 +449,7 @@ function MashtalAI() {
                 <div style={styles.analyzerOverlay}>
                   <div style={styles.scanLine}></div>
                   <FaSync style={styles.spinIcon} />
-                  <span style={{ marginTop: "10px", fontWeight: "600" }}>Executing Sovereign AI Analysis...</span>
+                  <span style={{ marginTop: "10px", fontWeight: "600", textAlign: "center", padding: "0 16px" }}>{analyzingMsg}</span>
                 </div>
               )}
             </div>
