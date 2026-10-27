@@ -4,7 +4,7 @@ Senior project: a smart irrigation and crop-health web app.
 
 | Part | Folder | Technology | Hosted on |
 |---|---|---|---|
-| Website | `frontend/` | React, Supabase (login + data), Open-Meteo (weather) | Vercel |
+| Website | `frontend/` | React, Supabase (login + data), Open-Meteo (weather) | Render |
 | AI server | `ai-backend/` | Python, FastAPI, XGBoost, Google Gemini (plant vision) | Render |
 
 ## Features
